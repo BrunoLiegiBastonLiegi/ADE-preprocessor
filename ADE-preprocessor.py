@@ -23,7 +23,7 @@ def find_sublist(l, pattern):
 def create_entity_labels(e_type, entity):
     """
     Parameters:
-    e_type (list[str]): list of entity types, e.g. ['LOC','PER','DRUG']
+    e_type (str): entity type, e.g. 'LOC','PER','DRUG'
     entity (list[int]): list containing the vocabulary index of each token forming the entity (Actually, simply the lenght of the list would be enough for this scope)
 
     Returns
@@ -32,7 +32,7 @@ def create_entity_labels(e_type, entity):
     if len(entity) == 1:
         return ['S-' + e_type]
     else:
-        return ['B-' + e_type] + ['I-' + e_type for i in range(len(adv_eff)-2)] + ['E-' + e_type]
+        return ['B-' + e_type] + ['I-' + e_type for i in range(len(entity)-2)] + ['E-' + e_type]
 
         
 def annotate_sent(tokenized_sent, entities, types):
@@ -86,6 +86,8 @@ with open(input_f, 'r') as f:
 model = "microsoft/BiomedNLP-PubMedBERT-base-uncased-abstract"
 tokenizer = AutoTokenizer.from_pretrained(model)
 
+
+out_f = 'DRUG-AE_BIOES.rel'
 # loop over each sentence and write the results to file
 with open(out_f, 'w') as f:
     for s in sents:
@@ -103,8 +105,9 @@ with open(out_f, 'w') as f:
         drug = tokenizer(s['DRUG'])['input_ids'][1:-1]
         # create the annotated sentence in BIOES scheme
         ann = annotate_sent(tokenized_sent, [adv_eff,drug], ['AE','DRUG'])
-        f.write(s['sentence'] + '\|')
-        [ f.write() ] 
+        f.write(s['sentence'] + '|')
+        [ f.write(i + '|') for i in ann ]
+        f.write('\n')
         print('# ANNOTATION\n', ann)
     
     
