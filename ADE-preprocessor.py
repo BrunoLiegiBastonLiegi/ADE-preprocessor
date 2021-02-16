@@ -1,4 +1,4 @@
-import torch, re, json, pandas
+import torch, re, json, pickle
 from transformers import AutoTokenizer
 from abc import ABC, abstractmethod
 
@@ -16,8 +16,8 @@ def find_sublist(l, pattern):
     matches = []
     for i in range(len(l)):
         if l[i] == pattern[0] and l[i:i+len(pattern)] == pattern: 
-            return (i, i+len(pattern))
-
+            matches.append((i, i+len(pattern)))#return (i, i+len(pattern))
+    return matches
 
 
 
@@ -113,9 +113,14 @@ class Annotation(object):
 
         # entities
         self.entities = {}
+        duplicates_check = {} # check for entities with the same tokenization but different span
         for k, v in entities.items():
             tokenized_ent = self.tokenizer(k, add_special_tokens=False)['input_ids']
-            span = find_sublist(self.sent['tokenized'], tokenized_ent)
+            try:
+                duplicates_check[str(tokenized_ent)] += 1
+            except:
+                duplicates_check[str(tokenized_ent)] = 0
+            span = find_sublist(self.sent['tokenized'], tokenized_ent)[duplicates_check[str(tokenized_ent)]]
             tag = self.scheme.tag(tokenized_ent, v)
             self.entities[k] = {'type': v, 'tokenized': tokenized_ent, 'span': span, 'tag': tag}
             
@@ -141,12 +146,16 @@ class Annotation(object):
     def get_annotation(self):
         return self.annotation
 
-    def json(self, pretty=True):
+    def json(self, of=None, **kwargs):
         tmp = { str(k): v for k,v in self.annotation['relations'].items() }
         conversion = self.annotation
         conversion['relations'] = tmp
-        return json.dumps(conversion, indent=4) if pretty else json.dumps(conversion)
-
+        if of == None:
+            print(json.dumps(conversion, **kwargs))
+        else:
+            json.dump(conversion, fp=of, **kwargs)
+            
+            '''
     def pandas(self):
         pd = {}
         for k, v in self.annotation['sentence'].items():
@@ -174,7 +183,7 @@ class Annotation(object):
                     pd[i + '_head'] = j[0]
                     pd[i + '_tail'] = j[1]
         return pd
-
+'''
 
 
 
@@ -190,24 +199,40 @@ tokenizer = AutoTokenizer.from_pretrained(model)
 # input file to process
 input_f = 'ADE-Corpus-V2/DRUG-AE.rel'
 
-#out_f = 'test.test'
-
-df = []
+sents = {}
 # extracting sentences and original entities annotations
-with open(out_f, 'w') as o_f:
-    with open(input_f, 'r') as in_f:
-        for x in in_f:
-            #print(x)                       # WARNING: some sentences occur multiple times!!! should we remove the duplicates?
-            split = re.split('\|', x)
-            sent = split[1]
-            ents = { split[2]: 'AE', split[5]: 'DRUG' }
-            rel = { (split[2], split[5]): 'HAS_ADVERSE_EFFECT' }
-            #ann = Annotation(sent=sent, entities=ents, relations=rel, tokenizer=tokenizer).json(pretty=True)
-            #json.dump(ann, o_f)
-            df.append(Annotation(sent=sent, entities=ents, relations=rel, tokenizer=tokenizer).pandas())
+with open(input_f, 'r') as in_f:
+    for x in in_f:
+        split = re.split('\|', x)
+        try:
+            tmp = sents[split[1]]
+            sents[split[1]]['entities'][split[2]] = 'AE'
+            sents[split[1]]['entities'][split[5]] = 'DRUG'
+            sents[split[1]]['relations'][(split[2], split[5])] = 'ADVERSE_EFFECT_OF'
+        except:
+            sents[split[1]] = {'entities': {split[2]: 'AE', split[5]: 'DRUG'},
+                               'relations': {(split[2], split[5]): 'ADVERSE_EFFECT_OF'}}
 
-#print(ann)
-#print(json.load(ann))
+# build new annotations
+ann = []
+for s in sents.keys():
+    ann.append(Annotation(sent=s, entities=sents[s]['entities'], relations=sents[s]['relations'], tokenizer=tokenizer).get_annotation())
 
-df = pandas.DataFrame(df)
-df.to_pickle('DRUG-AE.pkl')
+# pickle everything
+out_f = 'DRUG-AE_BIOES.pkl'
+with open(out_f, 'wb') as o_f:
+    pickle.dump(obj=ann, file=o_f)
+            
+            
+#for s in sents.keys():
+ #   ann = Annotation(sent=s, entities=sents[s]['entities'], relations=sents[s]['relations'], tokenizer=tokenizer).json(indent=4)
+
+#s = 'Lithium treatment was terminated in 1975 because of lithium intoxication with a diabetes insipidus-like syndrome.'
+#s = 'In patients with swallowing dysfunction and pneumonia, a history of mineral oil use should be obtained and a diagnosis of ELP should be considered in the differential diagnoses if mineral oil use has occurred.'
+#s = 'These in vitro findings and clinical course suggest that TRAb/TBII without thyroid-stimulating activity may develop in patients with amiodarone-induced destructive thyroiditis, as reported in patients with destructive thyroiditis, such as subacute and silent thyroiditis.'
+#s = 'We describe a case of disseminated muscular cysticercosis followed by myositis (fever, diffuse myalgia, weakness of the lower limbs, and inflammatory reaction around dying cysticerci) induced by praziquantel therapy, an event not described previously.'
+#ss = sents[s]
+#print(ss)
+#Annotation(s,entities=ss['entities'],relations=ss['relations'],tokenizer=tokenizer).json(indent=4)
+
+
