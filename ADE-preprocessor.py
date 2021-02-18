@@ -1,6 +1,7 @@
 import torch, re, json, pickle
 from transformers import AutoTokenizer
 from abc import ABC, abstractmethod
+from itertools import product
 
 
 
@@ -123,10 +124,37 @@ class Annotation(object):
             span = find_sublist(self.sent['tokenized'], tokenized_ent)[duplicates_check[str(tokenized_ent)]]
             tag = self.scheme.tag(tokenized_ent, v)
             self.entities[k] = {'type': v, 'tokenized': tokenized_ent, 'span': span, 'tag': tag}
+        # check for overlapping entities
+        self.overlapping_entities = False
+        for v in self.entities.values():
+            span1 = list(range(v['span'][0], v['span'][1]))
+            print('### span1:',span1)
+            for w in self.entities.values():
+                if v != w:
+                    span2 = list(range(w['span'][0], w['span'][1]))
+                    print('### span1:',span2)
+                    if len(find_sublist(span1, span2)) != 0 or len(find_sublist(span2, span1)) != 0 :
+                        self.overlapping_entities = True
+                    print('> overlapping', self.overlapping_entities)
             
         # relations
-        self.relations = { k: {'type': v, 'tokenized':(self.entities[k[0]]['tokenized'], self.entities[k[1]]['tokenized']), 'span':(self.entities[k[0]]['span'], self.entities[k[1]]['span']) } for k, v in relations.items() } 
-        
+        possible_relations = list(product(self.entities.keys(), self.entities.keys())) # all possible relations
+        [ possible_relations.pop(i*len(self.entities.keys())) for i in range(len(self.entities.keys())) ]
+        self.relations = { k: {
+            'type': v,
+            'tokenized': (self.entities[k[0]]['tokenized'], self.entities[k[1]]['tokenized']),
+            'span': (self.entities[k[0]]['span'], self.entities[k[1]]['span'])
+        } for k, v in relations.items() }
+        for r in possible_relations: # add the NO_RELATIONS 
+            try:
+                tmp = self.relations[r]
+            except:
+                self.relations[r] = {
+                    'type': 'NO_RELATION',
+                    'tokenized': (self.entities[r[0]]['tokenized'], self.entities[r[1]]['tokenized']),
+                    'span': (self.entities[r[0]]['span'], self.entities[r[1]]['span'])
+                }
+                
         # tag sentence
         self.sent['tag'] = []
         e_sorted = list(self.entities.values())
@@ -144,6 +172,7 @@ class Annotation(object):
         self.annotation = {'sentence': self.sent, 'entities': self.entities, 'relations': self.relations}
 
     def get_annotation(self):
+        assert self.overlapping_entities == False, "Expected non-overlapping entities"
         return self.annotation
 
     def json(self, of=None, **kwargs):
@@ -215,8 +244,18 @@ with open(input_f, 'r') as in_f:
 
 # build new annotations
 ann = []
+c = 0 # counter for sentences with overlapping entities
 for s in sents.keys():
-    ann.append(Annotation(sent=s, entities=sents[s]['entities'], relations=sents[s]['relations'], tokenizer=tokenizer).get_annotation())
+    try:
+        a = Annotation(sent=s, entities=sents[s]['entities'], relations=sents[s]['relations'], tokenizer=tokenizer)
+        ann.append(a.get_annotation())
+        a.json(indent=4)
+    except:
+        c += 1
+
+print('> Found ', c, 'sentences with overlapping entities, discarded them.')
+        
+    
 
 # pickle everything
 out_f = 'DRUG-AE_BIOES.pkl'
