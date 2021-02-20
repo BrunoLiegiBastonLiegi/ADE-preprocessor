@@ -128,14 +128,11 @@ class Annotation(object):
         self.overlapping_entities = False
         for v in self.entities.values():
             span1 = list(range(v['span'][0], v['span'][1]))
-            print('### span1:',span1)
             for w in self.entities.values():
                 if v != w:
                     span2 = list(range(w['span'][0], w['span'][1]))
-                    print('### span1:',span2)
                     if len(find_sublist(span1, span2)) != 0 or len(find_sublist(span2, span1)) != 0 :
                         self.overlapping_entities = True
-                    print('> overlapping', self.overlapping_entities)
             
         # relations
         possible_relations = list(product(self.entities.keys(), self.entities.keys())) # all possible relations
@@ -183,36 +180,7 @@ class Annotation(object):
             print(json.dumps(conversion, **kwargs))
         else:
             json.dump(conversion, fp=of, **kwargs)
-            
-            '''
-    def pandas(self):
-        pd = {}
-        for k, v in self.annotation['sentence'].items():
-            if k == 'sentence':
-                pd['sent'] = v
-            elif k == 'tokenized' or k == 'tag' :
-                pd[k + '_sent'] = v
-        for k, v in self.annotation['entities'].items():
-            tmp = 'type'
-            for i, j in v.items():
-                if i == 'type':
-                    pd[j] = k
-                    tmp = j
-                elif i == 'tokenized' or i == 'tag':
-                    pd[i + '_' + tmp] = j
-        for k, v in self.annotation['relations'].items():
-            tmp = 'type'
-            for i, j in v.items():
-                if i == 'type':
-                    pd['relation_type'] = j
-                    pd['head'] = k[0]
-                    pd['tail'] = k[1]
-                    tmp = j
-                elif i == 'tokenized':
-                    pd[i + '_head'] = j[0]
-                    pd[i + '_tail'] = j[1]
-        return pd
-'''
+
 
 
 
@@ -275,3 +243,22 @@ with open(out_f, 'wb') as o_f:
 #Annotation(s,entities=ss['entities'],relations=ss['relations'],tokenizer=tokenizer).json(indent=4)
 
 
+
+# k-fold cross validation
+from sklearn.model_selection import KFold
+import numpy as np
+
+k = 10
+kf = KFold(n_splits=k, shuffle=True)
+
+ann = np.array(ann)
+folds = {}
+f = 0
+for train_index, test_index in kf.split(ann):
+    folds['fold_' + str(f)] = { 'train': ann[train_index], 'test': ann[test_index] }
+    f += 1
+
+# pickle everything
+out_f = 'DRUG-AE_BIOES_' + str(k) + '-fold.pkl'
+with open(out_f, 'wb') as o_f:
+    pickle.dump(obj=folds, file=o_f)
