@@ -94,9 +94,10 @@ class BIOES(Scheme):
 
 class Annotation(object):
     
-    def __init__(self, sent, entities, relations, tokenizer=None, ner_scheme=None):
+    def __init__(self, sent, entities, relations, entity2embedding, tokenizer=None, ner_scheme=None):
         
         self.sent = {'sentence': sent}
+        self.ent2emb = entity2embedding
         
         # tokenizer
         if tokenizer != None:
@@ -123,7 +124,7 @@ class Annotation(object):
                 duplicates_check[str(tokenized_ent)] = 0
             span = find_sublist(self.sent['tokenized'], tokenized_ent)[duplicates_check[str(tokenized_ent)]]
             tag = self.scheme.tag(tokenized_ent, v)
-            self.entities[k] = {'type': v, 'tokenized': tokenized_ent, 'span': span, 'tag': tag}
+            self.entities[k] = {'type': v, 'tokenized': tokenized_ent, 'span': span, 'tag': tag, 'embedding': self.ent2emb[k]}
         # check for overlapping entities
         self.overlapping_entities = False
         for v in self.entities.values():
@@ -196,6 +197,13 @@ tokenizer = AutoTokenizer.from_pretrained(model)
 # input file to process
 input_f = 'ADE-Corpus-V2/DRUG-AE.rel'
 
+# load entity graph embeddings
+# these were obtained by disambiguation with metamap
+# combined with some pretrained Methathesaurus embeddings
+# (https://www.ncbi.nlm.nih.gov/pmc/articles/PMC6568073/)
+with open('entity2embedding.pkl', 'rb') as f:
+    entity2embedding = pickle.load(f)
+
 sents = {}
 # extracting sentences and original entities annotations
 with open(input_f, 'r') as in_f:
@@ -214,16 +222,20 @@ with open(input_f, 'r') as in_f:
 ann = []
 c = 0 # counter for sentences with overlapping entities
 for s in sents.keys():
+    
     try:
-        a = Annotation(sent=s, entities=sents[s]['entities'], relations=sents[s]['relations'], tokenizer=tokenizer)
+        a = Annotation(sent=s,
+                       entities=sents[s]['entities'],
+                       relations=sents[s]['relations'],
+                       entity2embedding=entity2embedding,
+                       tokenizer=tokenizer)
         ann.append(a.get_annotation())
-        a.json(indent=4)
+        #a.json(indent=4)
     except:
         c += 1
 
-print('> Found ', c, 'sentences with overlapping entities, discarded them.')
+print('> Found ', c, 'sentences with overlapping entities or missing entity graph embeddings, discarded them.')
         
-    
 
 # pickle everything
 out_f = 'DRUG-AE_BIOES.pkl'
@@ -241,7 +253,6 @@ with open(out_f, 'wb') as o_f:
 #ss = sents[s]
 #print(ss)
 #Annotation(s,entities=ss['entities'],relations=ss['relations'],tokenizer=tokenizer).json(indent=4)
-
 
 
 # k-fold cross validation
